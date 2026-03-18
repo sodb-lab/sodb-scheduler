@@ -10,9 +10,10 @@ export default async function handler(req, res) {
     const body = await new Promise((resolve, reject) => {
       let data = '';
       req.on('data', chunk => data += chunk);
-      req.on('end', () => resolve(JSON.parse(data)));
+      req.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
       req.on('error', reject);
     });
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -22,15 +23,28 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
+        max_tokens: 300,
         system: "Tu es un expert en marketing musical pour artistes rap/trap français. Tu écris des captions courtes, percutantes, authentiques. Ton urban, direct. Réponds UNIQUEMENT avec la caption, sans guillemets ni explications.",
         messages: [{ role: 'user', content: body.prompt }],
       }),
     });
+
     const data = await response.json();
-    if (!response.ok) return res.status(response.status).json(data);
-    return res.status(200).json({ caption: data.content?.[0]?.text || '' });
+
+    if (!response.ok) {
+      console.error('Anthropic error:', JSON.stringify(data));
+      return res.status(response.status).json({ error: data.error?.message || 'Erreur Anthropic' });
+    }
+
+    const caption = data.content?.[0]?.text || '';
+    if (!caption) {
+      console.error('Empty caption, full response:', JSON.stringify(data));
+      return res.status(500).json({ error: 'Caption vide reçue' });
+    }
+
+    return res.status(200).json({ caption });
   } catch (err) {
+    console.error('Caption handler error:', err);
     return res.status(500).json({ error: err.message });
   }
 }
